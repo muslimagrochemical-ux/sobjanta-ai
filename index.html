@@ -26,6 +26,13 @@
             overflow-x: hidden;
         }
         .bn-font { font-family: 'Hind Siliguri', sans-serif; }
+        
+        @keyframes subtle {
+          0% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
+          100% { transform: translateY(0); }
+        }
+        .animate-subtle { animation: subtle 3s ease-in-out infinite; }
     </style>
 <script type="importmap">
 {
