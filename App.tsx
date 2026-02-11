@@ -39,8 +39,9 @@ const App: React.FC = () => {
   const nextStartTimeRef = useRef<number>(0);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const activeLiveSessionRef = useRef<any>(null);
 
-  const systemInstruction = `আপনি সবজান্তা (Sobjanta), জুবায়ের তালুকদার (Jubayer Talukder) দ্বারা তৈরি একজন অত্যন্ত বুদ্ধিমান এবং বন্ধুসুলভ এআই। আপনার বাড়ি সিরাজগঞ্জের কামারখন্দে। আপনি সবসময় শুদ্ধ বাংলায় উত্তর দেবেন। ব্যবহারকারীর সাথে এমনভাবে কথা বলবেন যেন আপনি তার বহুদিনের পুরনো বন্ধু। কোনো বিষয়ে নিশ্চিত না হলে আপনি গুগল সার্চের সাহায্য নেবেন।`;
+  const systemInstruction = `আপনি সবজান্তা (Sobjanta), জুবায়ের তালুকদার (Jubayer Talukder) দ্বারা তৈরি বাংলাদেশের নিজস্ব এআই। আপনার বাড়ি সিরাজগঞ্জের কামারখন্দে। আপনি সবসময় শুদ্ধ বাংলায় উত্তর দেবেন এবং বন্ধুর মতো আন্তরিক আচরণ করবেন। যদি ব্যবহারকারী কোনো ছবি তৈরি করতে বলে (যেমন: "আঁকো", "ছবি বানাও", "Image", "Draw"), তাহলে আপনি সেই বিষয়ের বর্ণনা দিয়ে ছবি তৈরি করবেন।`;
 
   useEffect(() => {
     const savedUser = localStorage.getItem('sobjanta_user');
@@ -56,9 +57,7 @@ const App: React.FC = () => {
         }));
         setSessions(formatted);
         if (formatted.length > 0) setCurrentSessionId(formatted[0].id);
-      } catch (e) {
-        console.error("Session restoration failed", e);
-      }
+      } catch (e) { console.error(e); }
     }
   }, []);
 
@@ -86,36 +85,18 @@ const App: React.FC = () => {
   const createNewChat = () => {
     setView('chat');
     const newId = Date.now().toString();
-    const newSession: ChatSession = {
-      id: newId,
-      title: 'নতুন চ্যাট',
-      messages: [],
-      lastUpdated: new Date(),
-    };
-    setSessions(prev => [newSession, ...prev]);
+    setSessions(prev => [{ id: newId, title: 'নতুন আড্ডা', messages: [], lastUpdated: new Date() }, ...prev]);
     setCurrentSessionId(newId);
     if (window.innerWidth < 768) setIsSidebarOpen(false);
   };
-
-  const handleDeleteSession = (sessionId: string) => {
-    if (confirm('এই আড্ডাটি কি মুছে ফেলতে চান?')) {
-      const updated = sessions.filter(s => s.id !== sessionId);
-      setSessions(updated);
-      if (currentSessionId === sessionId) {
-        setCurrentSessionId(updated.length > 0 ? updated[0].id : null);
-      }
-    }
-  };
-
-  const currentMessages = sessions.find(s => s.id === currentSessionId)?.messages || [];
 
   const updateSession = (sessionId: string, newMessages: Message[]) => {
     setSessions(prev => prev.map(s => {
       if (s.id === sessionId) {
         let title = s.title;
-        if ((title === 'নতুন চ্যাট') && newMessages.length > 0) {
+        if ((title === 'নতুন আড্ডা' || title === 'শিরোনামহীন') && newMessages.length > 0) {
           const firstUser = newMessages.find(m => m.role === 'user');
-          if (firstUser) title = firstUser.content.slice(0, 25) + (firstUser.content.length > 25 ? '...' : '');
+          if (firstUser) title = firstUser.content.slice(0, 20) + (firstUser.content.length > 20 ? '...' : '');
         }
         return { ...s, messages: newMessages, lastUpdated: new Date(), title };
       }
@@ -130,14 +111,13 @@ const App: React.FC = () => {
     let sessionId = currentSessionId;
     if (!sessionId) {
       sessionId = Date.now().toString();
-      const newSession = { id: sessionId, title: content.slice(0, 25), messages: [], lastUpdated: new Date() };
-      setSessions(prev => [newSession, ...prev]);
+      setSessions(prev => [{ id: sessionId!, title: content.slice(0, 20), messages: [], lastUpdated: new Date() }, ...prev]);
       setCurrentSessionId(sessionId);
     }
 
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content, timestamp: new Date() };
-    const currentSession = sessions.find(s => s.id === sessionId);
-    const updatedMsgs = [...(currentSession?.messages || []), userMsg];
+    const currentMsgs = sessions.find(s => s.id === sessionId)?.messages || [];
+    const updatedMsgs = [...currentMsgs, userMsg];
     
     updateSession(sessionId!, updatedMsgs);
     setInputText('');
@@ -146,31 +126,45 @@ const App: React.FC = () => {
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: content,
-        config: { 
-          systemInstruction: systemInstruction,
-          tools: [{ googleSearch: {} }] 
-        }
-      });
+      const isImageRequest = /আঁকো|ছবি|image|draw|picture|তৈরি করো/i.test(content);
+      let assistantMsg: Message;
 
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response.text || 'দুঃখিত বন্ধু, আমি বিষয়টি বুঝতে পারছি না।',
-        timestamp: new Date(),
-        groundingSources: response.candidates?.[0]?.groundingMetadata?.groundingChunks
-          ?.filter((ch: any) => ch.web)
-          ?.map((ch: any) => ({ title: ch.web.title, uri: ch.web.uri })) || []
-      };
-      
+      if (isImageRequest) {
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: { parts: [{ text: `High resolution cinematic photorealistic art based on: ${content}. Beautiful details, sharp focus.` }] },
+        });
+
+        let imageUrl = '';
+        let textResponse = 'এই যে বন্ধু, তোমার জন্য ছবি তৈরি করেছি!';
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData) imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+          else if (part.text) textResponse = part.text;
+        }
+        assistantMsg = { id: Date.now().toString(), role: 'assistant', content: textResponse, imageUrl, timestamp: new Date() };
+      } else {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-pro-preview',
+          contents: content,
+          config: { 
+            systemInstruction, 
+            tools: [{ googleSearch: {} }],
+            thinkingConfig: { thinkingBudget: 4000 }
+          }
+        });
+        assistantMsg = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: response.text || 'কিছু বুঝতে পারলাম না বন্ধু।',
+          timestamp: new Date(),
+          groundingSources: response.candidates?.[0]?.groundingMetadata?.groundingChunks
+            ?.filter((ch:any) => ch.web)
+            ?.map((ch:any) => ({ title: ch.web.title, uri: ch.web.uri })) || []
+        };
+      }
       updateSession(sessionId!, [...updatedMsgs, assistantMsg]);
-    } catch (e) {
-      setError("নেটওয়ার্কের সমস্যা! আবার চেষ্টা করুন বন্ধু।");
-    } finally {
-      setIsTyping(false);
-    }
+    } catch (e) { setError("নেটওয়ার্কের সমস্যা হচ্ছে! আবার চেষ্টা করো বন্ধু।"); }
+    finally { setIsTyping(false); }
   };
 
   const startLiveConversation = async () => {
@@ -178,7 +172,6 @@ const App: React.FC = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       
@@ -198,53 +191,57 @@ const App: React.FC = () => {
             scriptProcessor.connect(audioContextRef.current!.destination);
           },
           onmessage: async (msg: LiveServerMessage) => {
-            const audioData = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-            if (audioData) {
+            if (msg.serverContent?.inputTranscription) {
+               setLiveState(prev => ({ ...prev, currentTranscription: msg.serverContent!.inputTranscription!.text }));
+            }
+            if (msg.serverContent?.outputTranscription) {
+               setLiveState(prev => ({ ...prev, currentTranscription: msg.serverContent!.outputTranscription!.text }));
+            }
+            
+            const audio = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+            if (audio) {
               setLiveState(prev => ({ ...prev, isSpeaking: true }));
-              const buffer = await decodeAudioData(decode(audioData), outputAudioContextRef.current!, 24000, 1);
+              const buffer = await decodeAudioData(decode(audio), outputAudioContextRef.current!, 24000, 1);
               const source = outputAudioContextRef.current!.createBufferSource();
               source.buffer = buffer;
               source.connect(outputAudioContextRef.current!.destination);
-              
-              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputAudioContextRef.current!.currentTime);
-              source.start(nextStartTimeRef.current);
-              nextStartTimeRef.current += buffer.duration;
-              
+              const startTime = Math.max(nextStartTimeRef.current, outputAudioContextRef.current!.currentTime);
+              source.start(startTime);
+              nextStartTimeRef.current = startTime + buffer.duration;
               sourcesRef.current.add(source);
               source.onended = () => {
                 sourcesRef.current.delete(source);
                 if (sourcesRef.current.size === 0) setLiveState(prev => ({ ...prev, isSpeaking: false }));
               };
             }
-            if (msg.serverContent?.interrupted) {
-              sourcesRef.current.forEach(s => s.stop());
-              sourcesRef.current.clear();
-              nextStartTimeRef.current = 0;
-            }
           },
-          onerror: () => {
-            setError("ভয়েস চ্যাট বন্ধ হয়ে গেছে।");
-            stopLiveConversation();
-          },
+          onerror: () => stopLiveConversation(),
           onclose: () => setLiveState(prev => ({ ...prev, isConnected: false }))
         },
         config: { 
           responseModalities: [Modality.AUDIO], 
-          systemInstruction: systemInstruction,
+          systemInstruction,
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         }
       });
-    } catch (e) { 
-      setError("মাইক্রোফোন চালু করা যাচ্ছে না। ব্রাউজার পারমিশন চেক করুন।"); 
-    }
+      activeLiveSessionRef.current = await sessionPromise;
+    } catch (e) { setError("মাইক্রোফোন চালু করা যাচ্ছে না।"); }
   };
 
   const stopLiveConversation = () => {
     mediaStreamRef.current?.getTracks().forEach(t => t.stop());
-    setLiveState({ isConnected: false, isSpeaking: false, isListening: false, currentTranscription: '' });
+    if (activeLiveSessionRef.current) {
+        activeLiveSessionRef.current.close();
+        activeLiveSessionRef.current = null;
+    }
     sourcesRef.current.forEach(s => s.stop());
     sourcesRef.current.clear();
+    setLiveState({ isConnected: false, isSpeaking: false, isListening: false, currentTranscription: '' });
   };
+
+  const currentMessages = sessions.find(s => s.id === currentSessionId)?.messages || [];
 
   if (!user) return <Login onLogin={handleLogin} />;
 
@@ -255,7 +252,7 @@ const App: React.FC = () => {
         currentSessionId={currentSessionId} 
         onSelectSession={(id) => { setCurrentSessionId(id); setView('chat'); setIsSidebarOpen(false); }} 
         onNewChat={createNewChat} 
-        onDeleteSession={handleDeleteSession}
+        onDeleteSession={(id) => setSessions(prev => prev.filter(s => s.id !== id))}
         onLogout={handleLogout}
         onOpenAbout={() => { setView('about'); setIsSidebarOpen(false); }}
         onOpenShare={() => setIsShareModalOpen(true)}
@@ -269,15 +266,7 @@ const App: React.FC = () => {
         <Header onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
         
         <main className="flex-1 flex flex-col pt-16 pb-24 overflow-hidden">
-          {error && (
-            <div className="m-4 p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex justify-between items-center animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <span>{error}</span>
-              </div>
-              <button onClick={() => setError(null)} className="p-1 hover:bg-red-100 rounded-lg">✕</button>
-            </div>
-          )}
+          {error && <div className="m-4 p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex justify-between"><span>{error}</span><button onClick={() => setError(null)}>✕</button></div>}
           
           {view === 'chat' ? (
             <>
@@ -288,48 +277,33 @@ const App: React.FC = () => {
                   <div className="w-32 h-32 bg-indigo-600 rounded-full flex items-center justify-center shadow-2xl animate-pulse mb-8 ring-8 ring-indigo-50">
                     <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
                   </div>
-                  <h3 className="text-2xl font-black mb-4">সবজান্তা শুনছে...</h3>
-                  <p className="text-slate-400 bn-font mb-10">আপনার সিরাজগঞ্জের এআই বন্ধু আপনার কথা শোনার জন্য তৈরি</p>
-                  <button onClick={stopLiveConversation} className="px-12 py-4 bg-red-500 hover:bg-red-600 text-white font-black rounded-2xl shadow-xl transition-all active:scale-95">কথা বলা বন্ধ করুন</button>
-                </div>
-              )}
-              
-              {isTyping && (
-                <div className="px-6 py-2 flex items-center gap-2">
-                  <div className="flex gap-1">
-                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></div>
-                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce delay-75"></div>
-                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce delay-150"></div>
+                  <div className="max-w-md px-6 text-center">
+                    <h3 className="text-2xl font-black mb-4">সবজান্তা শুনছে...</h3>
+                    <div className="min-h-[60px] p-4 bg-slate-50 rounded-2xl border border-slate-100 italic text-slate-600 bn-font mb-10">
+                      {liveState.currentTranscription || "কথা বলুন বন্ধু..."}
+                    </div>
+                    <button onClick={stopLiveConversation} className="px-12 py-4 bg-red-500 hover:bg-red-600 text-white font-black rounded-2xl shadow-xl transition-all active:scale-95">কথা বলা বন্ধ করুন</button>
                   </div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">সবজান্তা ভাবছে...</span>
                 </div>
               )}
             </>
           ) : (
             <AboutPage onBackToChat={() => setView('chat')} />
           )}
+
+          {isTyping && (
+            <div className="px-6 py-2 flex items-center gap-2">
+              <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">সবজান্তা ভাবছে...</span>
+            </div>
+          )}
         </main>
 
         {view === 'chat' && (
-          <div className="fixed bottom-0 left-0 right-0 md:left-auto md:w-[calc(100%-320px)] bg-white/80 backdrop-blur-xl border-t border-slate-100 p-4 flex gap-3 z-30">
-            <button onClick={startLiveConversation} className="w-12 h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 active:scale-90 transition-all">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-            </button>
-            <input 
-              type="text" 
-              value={inputText} 
-              onChange={e => setInputText(e.target.value)} 
-              onKeyDown={e => e.key === 'Enter' && handleSendMessage()} 
-              placeholder="সবজান্তাকে কিছু জিজ্ঞাসা করুন..." 
-              className="flex-1 h-12 px-5 bg-slate-50 rounded-2xl border border-slate-200 focus:bg-white outline-none focus:ring-2 focus:ring-indigo-500/10 transition-all" 
-            />
-            <button 
-              onClick={() => handleSendMessage()} 
-              disabled={!inputText.trim() || isTyping} 
-              className="w-12 h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <svg className="w-5 h-5 rotate-90" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
-            </button>
+          <div className="fixed bottom-0 left-0 right-0 md:left-auto md:w-[calc(100%-288px)] bg-white/80 backdrop-blur-xl border-t border-slate-100 p-4 flex gap-3 z-30">
+            <button onClick={startLiveConversation} className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-90"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg></button>
+            <input type="text" value={inputText} onChange={e => setInputText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} placeholder="কিছু জিজ্ঞাসা করো বা ছবি আঁকতে বলো..." className="flex-1 h-12 px-5 bg-slate-50 rounded-2xl border border-slate-200 outline-none focus:bg-white" />
+            <button onClick={() => handleSendMessage()} disabled={!inputText.trim() || isTyping} className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-90 disabled:opacity-50"><svg className="w-5 h-5 rotate-90" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg></button>
           </div>
         )}
       </div>
