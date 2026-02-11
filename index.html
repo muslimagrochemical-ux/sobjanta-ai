@@ -7,20 +7,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#4f46e5">
     
-    <!-- Primary Meta Tags -->
     <title>সবজান্তা (Sobjanta) - জুবায়ের তালুকদারের এআই বন্ধু</title>
-    <meta name="title" content="সবজান্তা (Sobjanta) - আপনার স্মার্ট এআই সঙ্গী">
-    <meta name="description" content="জুবায়ের তালুকদার দ্বারা নির্মিত একটি উন্নত বাংলা এআই অ্যাসিস্ট্যান্ট যা আপনার সব প্রশ্নের উত্তর দেয়।">
+    <meta name="description" content="জুবায়ের তালুকদার দ্বারা নির্মিত একটি উন্নত বাংলা এআই অ্যাসিস্ট্যান্ট।">
     
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://sobjanta-ai.vercel.app/">
-    <meta property="og:title" content="সবজান্তা (Sobjanta) - জুবায়ের তালুকদারের এআই বন্ধু">
-    <meta property="og:description" content="সিরাজগঞ্জের কামারখন্দ থেকে জুবায়ের তালুকদারের হাত ধরে তৈরি বাংলাদেশের নিজস্ব এআই।">
-    <meta property="og:image" content="https://images.unsplash.com/photo-1620712943543-bcc4628c9757?auto=format&fit=crop&q=80&w=600">
-
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="https://api.dicebear.com/7.x/bottts/svg?seed=sobjanta">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -31,49 +21,27 @@
         body {
             font-family: 'Inter', 'Hind Siliguri', sans-serif;
             background: #fdfdfd;
-            -webkit-tap-highlight-color: transparent;
             margin: 0;
             padding: 0;
             overflow-x: hidden;
         }
         .bn-font { font-family: 'Hind Siliguri', sans-serif; }
-        .message-user {
-            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-        }
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 10px;
-        }
-        .qr-gradient {
-            background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%);
-        }
-        @keyframes subtle-bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-        }
-        .animate-subtle { animation: subtle-bounce 3s ease-in-out infinite; }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "@google/genai": "https://esm.sh/@google/genai@1.4.0",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "react/": "https://esm.sh/react@^19.2.4/",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
+    "@google/genai": "https://esm.sh/@google/genai@^1.40.0",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4"
   }
 }
 </script>
 </head>
 <body>
     <div id="root"></div>
-    <script type="module" src="index.tsx"></script>
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>
