@@ -154,8 +154,11 @@ const App: React.FC = () => {
         }
         assistantMsg = { id: Date.now().toString(), role: 'assistant', content: textResponse, imageUrl, timestamp: new Date() };
       } else {
+        // Maps tool requires gemini-2.5 series
+        const modelToUse = isPlaceRequest ? 'gemini-2.5-flash-latest' : 'gemini-3-pro-preview';
+        
         const response: GenerateContentResponse = await ai.models.generateContent({
-          model: 'gemini-3-pro-preview',
+          model: modelToUse,
           contents: content,
           config: { 
             systemInstruction, 
