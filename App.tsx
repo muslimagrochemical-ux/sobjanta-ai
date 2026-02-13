@@ -122,11 +122,6 @@ const App: React.FC = () => {
     const content = text || inputText;
     if (!content.trim() || isTyping) return;
 
-    if (!process.env.API_KEY || process.env.API_KEY === "") {
-      setError("আপনার প্রোজেক্টে API_KEY সেট করা নেই। Vercel সেটিংস থেকে এটি সেট করুন।");
-      return;
-    }
-
     let sessionId = currentSessionId;
     if (!sessionId) {
       sessionId = Date.now().toString();
@@ -145,7 +140,7 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
       const isImageRequest = /আঁকো|ছবি|image|draw|তৈরি করো/i.test(content);
       
       let assistantMsg: Message;
@@ -173,6 +168,7 @@ const App: React.FC = () => {
           config: { 
             systemInstruction, 
             tools: [{ googleSearch: {} }],
+            thinkingConfig: { thinkingBudget: 4000 }
           }
         });
         
@@ -190,17 +186,13 @@ const App: React.FC = () => {
       updateSession(sessionId!, [...updatedMsgs, assistantMsg]);
     } catch (e: any) { 
       console.error("AI Error:", e);
-      setError("এআই কাজ করতে গিয়ে একটি সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।");
+      setError("আপনার প্রোজেক্টে API_KEY সেট করা নেই অথবা এআই কাজ করতে পারছে না। Vercel সেটিংস থেকে API_KEY চেক করুন।");
     } finally { 
       setIsTyping(false); 
     }
   };
 
   const startLiveConversation = async () => {
-    if (!process.env.API_KEY) {
-      setError("API Key ছাড়া ভয়েস মোড কাজ করবে না।");
-      return;
-    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
@@ -208,7 +200,7 @@ const App: React.FC = () => {
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
       outputAudioContextRef.current = new AudioContext({ sampleRate: 24000 });
       
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
@@ -259,7 +251,7 @@ const App: React.FC = () => {
       });
       activeLiveSessionRef.current = await sessionPromise;
     } catch (e) { 
-      setError("মাইক্রোফোন চালু করা যাচ্ছে না।"); 
+      setError("মাইক্রোফোন চালু করা যাচ্ছে না। দয়া করে পারমিশন চেক করুন।"); 
     }
   };
 
