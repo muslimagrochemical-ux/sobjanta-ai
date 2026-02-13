@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import type { LiveServerMessage, GenerateContentResponse } from '@google/genai';
-import { Message, LiveState, ChatSession, User } from './types';
-import Header from './components/Header';
-import ChatWindow from './components/ChatWindow';
-import Sidebar from './components/Sidebar';
-import Login from './components/Login';
-import AboutPage from './components/AboutPage';
-import ShareModal from './components/ShareModal';
-import InstallGuide from './components/InstallGuide';
+import { Message, LiveState, ChatSession, User } from './types.ts';
+import Header from './components/Header.tsx';
+import ChatWindow from './components/ChatWindow.tsx';
+import Sidebar from './components/Sidebar.tsx';
+import Login from './components/Login.tsx';
+import AboutPage from './components/AboutPage.tsx';
+import ShareModal from './components/ShareModal.tsx';
+import InstallGuide from './components/InstallGuide.tsx';
 import { 
   decode, 
   decodeAudioData, 
   createPcmBlob 
-} from './utils/audioUtils';
+} from './utils/audioUtils.ts';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
