@@ -9,7 +9,6 @@ import Login from './components/Login';
 import AboutPage from './components/AboutPage';
 import ShareModal from './components/ShareModal';
 import InstallGuide from './components/InstallGuide';
-import VoiceWave from './components/VoiceWave';
 import { 
   decode, 
   decodeAudioData, 
@@ -64,31 +63,16 @@ const App: React.FC = () => {
         setSessions(formatted);
         if (formatted.length > 0) setCurrentSessionId(formatted[0].id);
       } catch (e) { 
-        console.error("Error loading sessions:", e); 
         localStorage.removeItem('sobjanta_sessions');
       }
     }
   }, []);
-
-  useEffect(() => {
-    if (sessions.length > 0) {
-      localStorage.setItem('sobjanta_sessions', JSON.stringify(sessions));
-    }
-  }, [sessions]);
 
   const handleLogin = (name: string) => {
     const newUser = { name, isLoggedIn: true };
     setUser(newUser);
     localStorage.setItem('sobjanta_user', JSON.stringify(newUser));
     createNewChat();
-  };
-
-  const handleLogout = () => {
-    if (confirm('আপনি কি নিশ্চিত যে লগআউট করতে চান?')) {
-      setUser(null);
-      localStorage.removeItem('sobjanta_user');
-      stopLiveConversation();
-    }
   };
 
   const createNewChat = () => {
@@ -122,6 +106,11 @@ const App: React.FC = () => {
     const content = text || inputText;
     if (!content.trim() || isTyping) return;
 
+    if (!process.env.API_KEY || process.env.API_KEY === "") {
+        setError("Vercel Settings থেকে API_KEY সেট করতে হবে বন্ধু!");
+        return;
+    }
+
     let sessionId = currentSessionId;
     if (!sessionId) {
       sessionId = Date.now().toString();
@@ -140,7 +129,7 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const isImageRequest = /আঁকো|ছবি|image|draw|তৈরি করো/i.test(content);
       
       let assistantMsg: Message;
@@ -148,19 +137,16 @@ const App: React.FC = () => {
       if (isImageRequest) {
         const response: GenerateContentResponse = await ai.models.generateContent({
           model: 'gemini-2.5-flash-image',
-          contents: { parts: [{ text: `High quality, detailed artistic image of: ${content}. Style: Professional and clean.` }] },
+          contents: { parts: [{ text: `Generate a high-quality creative artistic image: ${content}` }] },
           config: { imageConfig: { aspectRatio: "1:1" } }
         });
 
         let imageUrl = '';
-        let textResponse = 'আপনার অনুরোধ অনুযায়ী ছবি তৈরি করেছি, বন্ধু!';
         if (response.candidates?.[0]?.content?.parts) {
-          for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData) imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-            else if (part.text) textResponse = part.text;
-          }
+          const part = response.candidates[0].content.parts.find(p => p.inlineData);
+          if (part?.inlineData) imageUrl = `data:image/png;base64,${part.inlineData.data}`;
         }
-        assistantMsg = { id: Date.now().toString() + "-ai", role: 'assistant', content: textResponse, imageUrl, timestamp: new Date() };
+        assistantMsg = { id: Date.now().toString() + "-ai", role: 'assistant', content: 'আমি আপনার জন্য এই ছবিটি তৈরি করেছি!', imageUrl, timestamp: new Date() };
       } else {
         const response: GenerateContentResponse = await ai.models.generateContent({
           model: 'gemini-3-pro-preview',
@@ -175,7 +161,7 @@ const App: React.FC = () => {
         assistantMsg = {
           id: Date.now().toString() + "-ai",
           role: 'assistant',
-          content: response.text || 'দুঃখিত বন্ধু, আমি এই মুহূর্তে উত্তর দিতে পারছি না।',
+          content: response.text || 'দুঃখিত বন্ধু, আমি বুঝতে পারছি না।',
           timestamp: new Date(),
           groundingSources: response.candidates?.[0]?.groundingMetadata?.groundingChunks
             ?.map((ch:any) => ch.web)
@@ -185,22 +171,21 @@ const App: React.FC = () => {
       }
       updateSession(sessionId!, [...updatedMsgs, assistantMsg]);
     } catch (e: any) { 
-      console.error("AI Error:", e);
-      setError("আপনার প্রোজেক্টে API_KEY সেট করা নেই অথবা এআই কাজ করতে পারছে না। Vercel সেটিংস থেকে API_KEY চেক করুন।");
+      setError("এআই উত্তর দিতে ব্যর্থ হয়েছে। আপনার API_KEY চেক করুন।");
     } finally { 
       setIsTyping(false); 
     }
   };
 
   const startLiveConversation = async () => {
+    if (!process.env.API_KEY) return setError("API Key প্রয়োজন।");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
       outputAudioContextRef.current = new AudioContext({ sampleRate: 24000 });
       
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
@@ -223,24 +208,17 @@ const App: React.FC = () => {
               const source = outputAudioContextRef.current!.createBufferSource();
               source.buffer = buffer;
               source.connect(outputAudioContextRef.current!.destination);
-              
               const startTime = Math.max(nextStartTimeRef.current, outputAudioContextRef.current!.currentTime);
               source.start(startTime);
               nextStartTimeRef.current = startTime + buffer.duration;
-              
               source.onended = () => {
                 sourcesRef.current.delete(source);
-                if (sourcesRef.current.size === 0) {
-                  setLiveState(prev => ({ ...prev, isSpeaking: false }));
-                }
+                if (sourcesRef.current.size === 0) setLiveState(prev => ({ ...prev, isSpeaking: false }));
               };
               sourcesRef.current.add(source);
             }
           },
-          onerror: (err) => {
-            console.error("Live API Error:", err);
-            stopLiveConversation();
-          },
+          onerror: () => stopLiveConversation(),
           onclose: () => setLiveState(prev => ({ ...prev, isConnected: false }))
         },
         config: { 
@@ -250,9 +228,7 @@ const App: React.FC = () => {
         }
       });
       activeLiveSessionRef.current = await sessionPromise;
-    } catch (e) { 
-      setError("মাইক্রোফোন চালু করা যাচ্ছে না। দয়া করে পারমিশন চেক করুন।"); 
-    }
+    } catch (e) { setError("মাইক্রোফোন চালু করা যাচ্ছে না।"); }
   };
 
   const stopLiveConversation = () => {
@@ -261,8 +237,6 @@ const App: React.FC = () => {
     setLiveState({ isConnected: false, isSpeaking: false, isListening: false, currentTranscription: '' });
     nextStartTimeRef.current = 0;
   };
-
-  const currentMessages = sessions.find(s => s.id === currentSessionId)?.messages || [];
 
   if (!user) return <Login onLogin={handleLogin} />;
 
@@ -274,7 +248,7 @@ const App: React.FC = () => {
         onSelectSession={(id) => { setCurrentSessionId(id); setView('chat'); setIsSidebarOpen(false); }} 
         onNewChat={createNewChat} 
         onDeleteSession={(id) => setSessions(prev => prev.filter(s => s.id !== id))}
-        onLogout={handleLogout}
+        onLogout={() => { setUser(null); localStorage.removeItem('sobjanta_user'); }}
         onOpenAbout={() => { setView('about'); setIsSidebarOpen(false); }}
         onOpenShare={() => setIsShareModalOpen(true)}
         onOpenInstall={() => setIsInstallGuideOpen(true)}
@@ -285,42 +259,19 @@ const App: React.FC = () => {
       
       <div className="flex-1 flex flex-col relative bg-slate-50/20">
         <Header onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
-        
         <main className="flex-1 flex flex-col pt-16 pb-24 overflow-hidden">
           {error && (
-            <div className="mx-4 mt-4 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-sm font-bold flex justify-between items-center z-50 animate-in fade-in slide-in-from-top-2">
+            <div className="mx-4 mt-4 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-sm font-bold flex justify-between items-center z-50">
               <div className="flex items-center gap-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 {error}
               </div>
-              <button onClick={() => setError(null)} className="p-1 hover:bg-red-100 rounded-full transition-colors">✕</button>
+              <button onClick={() => setError(null)} className="p-1 hover:bg-red-100 rounded-full">✕</button>
             </div>
           )}
           
           {view === 'chat' ? (
-            <>
-              <ChatWindow messages={currentMessages} onHintClick={handleSendMessage} />
-              
-              {liveState.isConnected && (
-                <div className="absolute inset-0 bg-white/95 z-50 flex flex-col items-center justify-center animate-in fade-in duration-300">
-                  <div className="relative mb-12">
-                     <div className="w-44 h-44 bg-indigo-600 rounded-full flex items-center justify-center animate-pulse ring-[12px] ring-indigo-50 shadow-2xl">
-                        <svg className="w-20 h-20 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-                     </div>
-                     <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-full">
-                        <VoiceWave isActive={liveState.isSpeaking || liveState.isListening} color="bg-indigo-500" />
-                     </div>
-                  </div>
-                  <h3 className="text-2xl font-black mb-10 text-slate-800">সবজান্তা শুনছে...</h3>
-                  <button 
-                    onClick={stopLiveConversation} 
-                    className="flex items-center gap-3 px-10 py-4 bg-red-500 hover:bg-red-600 text-white font-black rounded-2xl shadow-xl transition-all"
-                  >
-                    বন্ধ করুন
-                  </button>
-                </div>
-              )}
-            </>
+            <ChatWindow messages={sessions.find(s => s.id === currentSessionId)?.messages || []} onHintClick={handleSendMessage} />
           ) : (
             <AboutPage onBackToChat={() => setView('chat')} />
           )}
@@ -339,33 +290,25 @@ const App: React.FC = () => {
 
         {view === 'chat' && (
           <div className="fixed bottom-0 left-0 right-0 md:left-auto md:w-[calc(100%-288px)] bg-white/80 backdrop-blur-xl border-t border-slate-100 p-4 pb-safe flex gap-3 z-30">
-            <button 
-              onClick={startLiveConversation} 
-              className="w-12 h-12 flex-shrink-0 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg hover:bg-indigo-700 transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-            </button>
-            <input 
-              type="text" 
-              value={inputText} 
-              onChange={e => setInputText(e.target.value)} 
-              onKeyDown={e => e.key === 'Enter' && handleSendMessage()} 
-              placeholder="সবজান্তাকে কিছু জিজ্ঞাসা করুন..." 
-              className="flex-1 h-12 px-5 bg-slate-100 rounded-2xl border border-transparent outline-none focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all text-sm md:text-base" 
-            />
-            <button 
-              onClick={() => handleSendMessage()} 
-              disabled={!inputText.trim() || isTyping} 
-              className="w-12 h-12 flex-shrink-0 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg disabled:opacity-50 hover:bg-indigo-700"
-            >
-              <svg className="w-5 h-5 rotate-90" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
-            </button>
+            <button onClick={startLiveConversation} className="w-12 h-12 flex-shrink-0 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg></button>
+            <input type="text" value={inputText} onChange={e => setInputText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} placeholder="সবজান্তাকে কিছু জিজ্ঞাসা করুন..." className="flex-1 h-12 px-5 bg-slate-100 rounded-2xl border border-transparent outline-none focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all text-sm" />
+            <button onClick={() => handleSendMessage()} disabled={!inputText.trim() || isTyping} className="w-12 h-12 flex-shrink-0 bg-indigo-600 text-white rounded-2xl flex items-center justify-center disabled:opacity-50"><svg className="w-5 h-5 rotate-90" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg></button>
           </div>
         )}
       </div>
 
       <ShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} appUrl={window.location.origin} />
       <InstallGuide isOpen={isInstallGuideOpen} onClose={() => setIsInstallGuideOpen(false)} />
+      
+      {liveState.isConnected && (
+        <div className="fixed inset-0 bg-white/95 z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
+          <div className="w-44 h-44 bg-indigo-600 rounded-full flex items-center justify-center animate-pulse shadow-2xl">
+            <svg className="w-20 h-20 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+          </div>
+          <h3 className="text-2xl font-black mt-12 text-slate-800">সবজান্তা শুনছে...</h3>
+          <button onClick={stopLiveConversation} className="mt-10 px-10 py-4 bg-red-500 text-white font-black rounded-2xl shadow-xl transition-all active:scale-95">বন্ধ করুন</button>
+        </div>
+      )}
     </div>
   );
 };
