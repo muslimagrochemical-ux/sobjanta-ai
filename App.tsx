@@ -106,8 +106,9 @@ const App: React.FC = () => {
     const content = text || inputText;
     if (!content.trim() || isTyping) return;
 
-    if (!process.env.API_KEY || process.env.API_KEY === "") {
-        setError("Vercel Settings থেকে API_KEY সেট করতে হবে বন্ধু!");
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+        setError("API_KEY খুঁজে পাওয়া যাচ্ছে না। Vercel এ ভেরিয়েবল চেক করুন বন্ধু!");
         return;
     }
 
@@ -129,7 +130,7 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const isImageRequest = /আঁকো|ছবি|image|draw|তৈরি করো/i.test(content);
       
       let assistantMsg: Message;
@@ -171,21 +172,22 @@ const App: React.FC = () => {
       }
       updateSession(sessionId!, [...updatedMsgs, assistantMsg]);
     } catch (e: any) { 
-      setError("এআই উত্তর দিতে ব্যর্থ হয়েছে। আপনার API_KEY চেক করুন।");
+      setError("এআই উত্তর দিতে ব্যর্থ হয়েছে। আপনার এপিআই কি অথবা ইন্টারনেট চেক করুন।");
     } finally { 
       setIsTyping(false); 
     }
   };
 
   const startLiveConversation = async () => {
-    if (!process.env.API_KEY) return setError("API Key প্রয়োজন।");
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) return setError("API Key প্রয়োজন।");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
       outputAudioContextRef.current = new AudioContext({ sampleRate: 24000 });
       
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
