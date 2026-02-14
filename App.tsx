@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import type { LiveServerMessage, GenerateContentResponse } from '@google/genai';
 import { Message, LiveState, ChatSession, User } from './types';
-import Header from './components/Header';
 import ChatWindow from './components/ChatWindow';
 import Sidebar from './components/Sidebar';
 import Login from './components/Login';
